@@ -9,9 +9,9 @@ on:
 jobs:
   test-setup-terrax:
     name: Test setup-terrax
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Install TerraX (latest)
         id: setup
@@ -38,9 +38,9 @@ jobs:
 
   test-find-stacks:
     name: Test find-stacks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - uses: ./setup-terrax
 
@@ -73,9 +73,9 @@ jobs:
 
   test-summary:
     name: Test summary
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - uses: ./setup-terrax
 
