@@ -35,3 +35,38 @@ jobs:
         run: |
           VERSION=$(terrax --version 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
           [ "$VERSION" = "v0.4.0" ] || (echo "Expected v0.4.0 got $VERSION" && exit 1)
+
+  test-find-stacks:
+    name: Test find-stacks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./setup-terrax
+
+      - name: Find all stacks under fixtures
+        id: all
+        uses: ./find-stacks
+        with:
+          dir: tests/fixtures
+
+      - name: Verify count is 3
+        run: |
+          COUNT="${{ steps.all.outputs.count }}"
+          [ "$COUNT" = "3" ] || (echo "Expected 3 stacks, got $COUNT. stacks=${{ steps.all.outputs.stacks }}" && exit 1)
+
+      - name: Verify stacks is a JSON array
+        run: |
+          echo '${{ steps.all.outputs.stacks }}' | jq 'if type == "array" then . else error("not an array") end'
+
+      - name: find-stacks with no stacks dir returns empty array
+        id: empty
+        uses: ./find-stacks
+        with:
+          dir: /tmp
+
+      - name: Verify empty result
+        run: |
+          [ "${{ steps.empty.outputs.count }}" = "0" ] \
+            && echo '${{ steps.empty.outputs.stacks }}' | jq '. == []' \
+            || (echo "Expected empty result" && exit 1)

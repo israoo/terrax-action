@@ -1,0 +1,46 @@
+name: 'Find TerraX Stacks'
+description: 'List Terragrunt stacks under a directory. With --base, returns only stacks affected by changes between base and HEAD.'
+inputs:
+  dir:
+    description: 'Root directory to scan for stacks.'
+    required: false
+    default: '.'
+  base:
+    description: 'Git base ref for change detection (e.g. origin/main, a commit SHA). When empty, all stacks under dir are returned. Requires fetch-depth: 0 on actions/checkout.'
+    required: false
+    default: ''
+outputs:
+  stacks:
+    description: 'JSON array of stack paths (e.g. ["/home/runner/work/repo/infra/prod/vpc"]).'
+    value: ${{ steps.find.outputs.stacks }}
+  count:
+    description: 'Number of stacks found.'
+    value: ${{ steps.find.outputs.count }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Find stacks
+      id: find
+      shell: bash
+      env:
+        INPUT_DIR: ${{ inputs.dir }}
+        INPUT_BASE: ${{ inputs.base }}
+      run: |
+        set -euo pipefail
+
+        ARGS=()
+        [ -n "$INPUT_DIR" ] && [ "$INPUT_DIR" != "." ] && ARGS+=(--dir "$INPUT_DIR")
+        [ -n "$INPUT_BASE" ] && ARGS+=(--base "$INPUT_BASE")
+
+        PATHS=$(terrax find "${ARGS[@]}" 2>/dev/null || true)
+
+        if [ -z "$PATHS" ]; then
+          JSON="[]"
+        else
+          JSON=$(printf '%s' "$PATHS" | jq -R -s 'split("\n") | map(select(length > 0))')
+        fi
+
+        COUNT=$(printf '%s' "$JSON" | jq 'length')
+
+        echo "stacks=${JSON}" >> "$GITHUB_OUTPUT"
+        echo "count=${COUNT}" >> "$GITHUB_OUTPUT"

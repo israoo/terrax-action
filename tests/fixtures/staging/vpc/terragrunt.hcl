@@ -1,0 +1,1 @@
+# Fixture: staging/vpc stack.

@@ -1,0 +1,1 @@
+# Fixture: prod/eks stack.
