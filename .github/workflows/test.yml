@@ -1,4 +1,3 @@
-# .github/workflows/test.yml
 name: Test Actions
 
 on:
@@ -10,10 +9,7 @@ on:
 jobs:
   test-setup-terrax:
     name: Test setup-terrax
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -22,11 +18,9 @@ jobs:
         uses: ./setup-terrax
 
       - name: Verify binary is in PATH
-        shell: bash
         run: terrax --version
 
       - name: Verify version output
-        shell: bash
         run: |
           echo "Installed: ${{ steps.setup.outputs.terrax-version }}"
           [[ "${{ steps.setup.outputs.terrax-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
@@ -38,7 +32,6 @@ jobs:
           version: v0.4.0
 
       - name: Verify pinned version
-        shell: bash
         run: |
           VERSION=$(terrax --version 2>&1 | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1)
           [ "$VERSION" = "v0.4.0" ] || (echo "Expected v0.4.0 got $VERSION" && exit 1)

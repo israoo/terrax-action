@@ -1,6 +1,5 @@
-# setup-terrax/action.yml
 name: 'Setup TerraX'
-description: 'Install the TerraX binary from GitHub Releases and add it to PATH.'
+description: 'Install the TerraX binary from GitHub Releases and add it to PATH. Supports Linux only.'
 inputs:
   version:
     description: 'TerraX version to install (e.g. v0.5.1 or latest).'
@@ -27,18 +26,11 @@ runs:
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/israoo/terrax/releases/latest" \
             | grep '"tag_name"' \
-            | sed 's/.*"tag_name": "\(.*\)".*/\1/')
+            | sed 's/.*"tag_name": "\([^"]*\)".*/\1/')
         fi
 
         # GoReleaser strips the leading 'v' from .Version in archive names.
         VERSION_CLEAN="${VERSION#v}"
-
-        case "$RUNNER_OS" in
-          Linux)   OS="Linux"  ;;
-          macOS)   OS="Darwin" ;;
-          Windows) OS="Windows" ;;
-          *) echo "Unsupported OS: $RUNNER_OS" && exit 1 ;;
-        esac
 
         case "$RUNNER_ARCH" in
           X64)   ARCH="x86_64" ;;
@@ -46,27 +38,13 @@ runs:
           *) echo "Unsupported arch: $RUNNER_ARCH" && exit 1 ;;
         esac
 
-        if [ "$RUNNER_OS" = "Windows" ]; then
-          EXT="zip"
-          BIN="terrax.exe"
-        else
-          EXT="tar.gz"
-          BIN="terrax"
-        fi
-
-        ARCHIVE="terrax_${VERSION_CLEAN}_${OS}_${ARCH}.${EXT}"
+        ARCHIVE="terrax_${VERSION_CLEAN}_Linux_${ARCH}.tar.gz"
         URL="https://github.com/israoo/terrax/releases/download/${VERSION}/${ARCHIVE}"
         INSTALL_DIR="$(mktemp -d)"
 
         echo "Downloading ${URL}"
         curl -fsSL "$URL" -o "${INSTALL_DIR}/${ARCHIVE}"
-
-        if [ "$EXT" = "tar.gz" ]; then
-          tar -xzf "${INSTALL_DIR}/${ARCHIVE}" -C "$INSTALL_DIR"
-        else
-          7z x "${INSTALL_DIR}/${ARCHIVE}" -o"${INSTALL_DIR}" -y > /dev/null
-        fi
-
-        chmod +x "${INSTALL_DIR}/${BIN}"
+        tar -xzf "${INSTALL_DIR}/${ARCHIVE}" -C "$INSTALL_DIR"
+        chmod +x "${INSTALL_DIR}/terrax"
         echo "${INSTALL_DIR}" >> "$GITHUB_PATH"
         echo "terrax-version=${VERSION}" >> "$GITHUB_OUTPUT"
