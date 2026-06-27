@@ -1,0 +1,21 @@
+name: 'TerraX Summary'
+description: 'Print a grouped terminal summary of pending vs. no-change stacks from .terrax/plans/ plan files.'
+inputs:
+  dir:
+    description: 'Working directory (same as terrax summary --dir). Defaults to repo root.'
+    required: false
+    default: '.'
+runs:
+  using: 'composite'
+  steps:
+    - name: Print plan summary
+      shell: bash
+      env:
+        INPUT_DIR: ${{ inputs.dir }}
+      run: |
+        set -euo pipefail
+
+        ARGS=()
+        [ -n "$INPUT_DIR" ] && [ "$INPUT_DIR" != "." ] && ARGS+=(--dir "$INPUT_DIR")
+
+        terrax summary "${ARGS[@]}"

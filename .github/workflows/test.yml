@@ -70,3 +70,20 @@ jobs:
           [ "${{ steps.empty.outputs.count }}" = "0" ] \
             && echo '${{ steps.empty.outputs.stacks }}' | jq -e '. == []' \
             || (echo "Expected empty result" && exit 1)
+
+  test-summary:
+    name: Test summary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./setup-terrax
+
+      - name: Create minimal repo root marker
+        run: |
+          echo "# root" > root.hcl
+          mkdir -p .terrax/plans
+
+      - name: Run summary with empty plans dir
+        uses: ./summary
+        # terrax summary exits 0 and prints "No plan files found." when .terrax/plans/ is empty.
