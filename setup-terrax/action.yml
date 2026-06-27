@@ -56,17 +56,17 @@ runs:
 
         ARCHIVE="terrax_${VERSION_CLEAN}_${OS}_${ARCH}.${EXT}"
         URL="https://github.com/israoo/terrax/releases/download/${VERSION}/${ARCHIVE}"
-        TMPDIR="$(mktemp -d)"
+        INSTALL_DIR="$(mktemp -d)"
 
         echo "Downloading ${URL}"
-        curl -fsSL "$URL" -o "${TMPDIR}/${ARCHIVE}"
+        curl -fsSL "$URL" -o "${INSTALL_DIR}/${ARCHIVE}"
 
         if [ "$EXT" = "tar.gz" ]; then
-          tar -xzf "${TMPDIR}/${ARCHIVE}" -C "$TMPDIR"
+          tar -xzf "${INSTALL_DIR}/${ARCHIVE}" -C "$INSTALL_DIR"
         else
-          7z x "${TMPDIR}/${ARCHIVE}" -o"${TMPDIR}" -y > /dev/null
+          7z x "${INSTALL_DIR}/${ARCHIVE}" -o"${INSTALL_DIR}" -y > /dev/null
         fi
 
-        chmod +x "${TMPDIR}/${BIN}"
-        echo "${TMPDIR}" >> "$GITHUB_PATH"
+        chmod +x "${INSTALL_DIR}/${BIN}"
+        echo "${INSTALL_DIR}" >> "$GITHUB_PATH"
         echo "terrax-version=${VERSION}" >> "$GITHUB_OUTPUT"
