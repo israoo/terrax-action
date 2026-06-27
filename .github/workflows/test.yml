@@ -68,5 +68,5 @@ jobs:
       - name: Verify empty result
         run: |
           [ "${{ steps.empty.outputs.count }}" = "0" ] \
-            && echo '${{ steps.empty.outputs.stacks }}' | jq '. == []' \
+            && echo '${{ steps.empty.outputs.stacks }}' | jq -e '. == []' \
             || (echo "Expected empty result" && exit 1)
