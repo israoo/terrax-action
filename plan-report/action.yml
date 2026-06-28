@@ -33,7 +33,8 @@ runs:
         terrax report \
           --plans-dir "$INPUT_PLANS_DIR" \
           --format markdown \
-          --output "$REPORT_FILE"
+          --output "$REPORT_FILE" \
+          --exit-code
         TERRAX_EXIT=$?
         set -e
 
