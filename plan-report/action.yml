@@ -10,7 +10,7 @@ inputs:
     default: ''
 outputs:
   report-file:
-    description: 'Path to the generated markdown report file. Empty when no plan files are found.'
+    description: 'Path to the generated markdown report file. Empty when no stacks have pending changes.'
     value: ${{ steps.report.outputs.report-file }}
   has-changes:
     description: 'true when at least one stack has pending changes, false otherwise.'
