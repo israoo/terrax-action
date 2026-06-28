@@ -26,7 +26,7 @@ Install TerraX from GitHub Releases and add it to `PATH`.
 
 | Name | Description |
 |------|-------------|
-| `terrax-version` | Resolved version installed (e.g. `v0.4.0`). |
+| `terrax-version` | Resolved version installed (e.g. `v0.5.0`). |
 
 ### Example
 

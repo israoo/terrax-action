@@ -7,7 +7,7 @@ inputs:
     default: 'latest'
 outputs:
   terrax-version:
-    description: 'Resolved version that was installed (e.g. v0.4.0).'
+    description: 'Resolved version that was installed (e.g. v0.5.0).'
     value: ${{ steps.install.outputs.terrax-version }}
 runs:
   using: 'composite'
