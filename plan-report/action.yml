@@ -10,8 +10,11 @@ inputs:
     default: ''
 outputs:
   report-file:
-    description: 'Path to the generated markdown report file.'
+    description: 'Path to the generated markdown report file. Empty when no plan files are found.'
     value: ${{ steps.report.outputs.report-file }}
+  has-changes:
+    description: 'true when at least one stack has pending changes, false otherwise.'
+    value: ${{ steps.report.outputs.has-changes }}
 runs:
   using: 'composite'
   steps:
@@ -26,9 +29,26 @@ runs:
 
         REPORT_FILE="${INPUT_OUTPUT:-${RUNNER_TEMP}/terrax-plan-report.md}"
 
+        set +e
         terrax report \
           --plans-dir "$INPUT_PLANS_DIR" \
           --format markdown \
           --output "$REPORT_FILE"
+        TERRAX_EXIT=$?
+        set -e
 
-        echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"
+        # Exit 2 = changes present (mirrors terraform -detailed-exitcode).
+        # Exit 0 = no plan files or no changes.
+        # Any other code is a real error.
+        case "$TERRAX_EXIT" in
+          0)
+            echo "has-changes=false" >> "$GITHUB_OUTPUT"
+            ;;
+          2)
+            echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"
+            echo "has-changes=true" >> "$GITHUB_OUTPUT"
+            ;;
+          *)
+            exit "$TERRAX_EXIT"
+            ;;
+        esac

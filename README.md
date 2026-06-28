@@ -110,7 +110,8 @@ Generate a markdown report from JSON plan files with per-resource attribute diff
 
 | Name | Description |
 |------|-------------|
-| `report-file` | Path to the generated markdown report file. |
+| `report-file` | Path to the generated markdown report file. Empty when no plan files are found. |
+| `has-changes` | `true` when at least one stack has pending changes, `false` otherwise. |
 
 ### Example
 
