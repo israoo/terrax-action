@@ -20,7 +20,7 @@ jobs:
       - name: Verify binary is in PATH
         run: terrax --version
 
-      - name: Verify version output
+      - name: Verify version output format
         run: |
           echo "Installed: ${{ steps.setup.outputs.terrax-version }}"
           [[ "${{ steps.setup.outputs.terrax-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
@@ -60,6 +60,14 @@ jobs:
         run: |
           echo '${{ steps.all.outputs.stacks }}' | jq 'if type == "array" then . else error("not an array") end'
 
+      - name: Verify expected stack paths are present
+        run: |
+          STACKS='${{ steps.all.outputs.stacks }}'
+          for SUFFIX in "tests/fixtures/prod/vpc" "tests/fixtures/prod/eks" "tests/fixtures/staging/vpc"; do
+            echo "$STACKS" | jq -e --arg s "$SUFFIX" '[.[] | endswith($s)] | any' \
+              || (echo "Missing expected stack suffix: $SUFFIX" && exit 1)
+          done
+
       - name: find-stacks with no stacks dir returns empty array
         id: empty
         uses: ./find-stacks
@@ -71,6 +79,37 @@ jobs:
           [ "${{ steps.empty.outputs.count }}" = "0" ] \
             && echo '${{ steps.empty.outputs.stacks }}' | jq -e '. == []' \
             || (echo "Expected empty result" && exit 1)
+
+      - name: Set up synthetic git repo for --base test
+        run: |
+          REPO=$(mktemp -d)
+          git init -b main "$REPO"
+          git -C "$REPO" config user.email "ci@test"
+          git -C "$REPO" config user.name "CI"
+          touch "$REPO/root.hcl"
+          mkdir -p "$REPO/stacks/vpc" "$REPO/stacks/eks"
+          echo "# vpc" > "$REPO/stacks/vpc/terragrunt.hcl"
+          echo "# eks" > "$REPO/stacks/eks/terragrunt.hcl"
+          git -C "$REPO" add -A && git -C "$REPO" commit -m "init"
+          echo "BASE_COMMIT=$(git -C "$REPO" rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "# changed" >> "$REPO/stacks/vpc/terragrunt.hcl"
+          git -C "$REPO" add -A && git -C "$REPO" commit -m "change vpc"
+          echo "TEST_REPO=$REPO" >> "$GITHUB_ENV"
+
+      - name: find-stacks with --base returns only affected stacks
+        id: affected
+        uses: ./find-stacks
+        with:
+          dir: ${{ env.TEST_REPO }}
+          base: ${{ env.BASE_COMMIT }}
+
+      - name: Verify only vpc is returned
+        run: |
+          COUNT="${{ steps.affected.outputs.count }}"
+          STACKS='${{ steps.affected.outputs.stacks }}'
+          [ "$COUNT" = "1" ] || (echo "Expected 1 affected stack, got $COUNT. stacks=$STACKS" && exit 1)
+          echo "$STACKS" | jq -e '[.[] | endswith("stacks/vpc")] | any' \
+            || (echo "Expected stacks/vpc in output, got $STACKS" && exit 1)
 
   test-summary:
     name: Test summary
@@ -85,6 +124,76 @@ jobs:
           echo "# root" > root.hcl
           mkdir -p .terrax/plans
 
-      - name: Run summary with empty plans dir
+      - name: Run summary with empty plans dir (default plans-dir)
         uses: ./summary
-        # terrax summary exits 0 and prints "No plan files found." when .terrax/plans/ is empty.
+        # terrax summary exits 0 with a "no plans" message when .terrax/plans/ is empty.
+
+      - name: Create fixture plan files
+        run: |
+          mkdir -p /tmp/fixture-plans/prod/vpc /tmp/fixture-plans/prod/eks
+          # prod/vpc has pending changes (create).
+          echo '{"resource_changes":[{"address":"aws_vpc.main","type":"aws_vpc","name":"main","change":{"actions":["create"],"before":null,"after":{"cidr_block":"10.0.0.0/16"}}}]}' \
+            > /tmp/fixture-plans/prod/vpc/tfplan.json
+          # prod/eks has no changes (no-op).
+          echo '{"resource_changes":[{"address":"aws_instance.web","type":"aws_instance","name":"web","change":{"actions":["no-op"],"before":{},"after":{}}}]}' \
+            > /tmp/fixture-plans/prod/eks/tfplan.json
+
+      - name: Run summary with plan files via plans-dir
+        uses: ./summary
+        with:
+          plans-dir: /tmp/fixture-plans
+
+      - name: Verify summary output contains both stacks
+        run: |
+          OUTPUT=$(terrax summary --plans-dir /tmp/fixture-plans 2>&1)
+          echo "$OUTPUT"
+          echo "$OUTPUT" | grep -q "prod/vpc" || (echo "Expected prod/vpc in summary output" && exit 1)
+          echo "$OUTPUT" | grep -q "prod/eks" || (echo "Expected prod/eks in summary output" && exit 1)
+
+  test-plan-report:
+    name: Test plan-report
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: ./setup-terrax
+
+      - name: Create fixture plan files
+        run: |
+          mkdir -p /tmp/report-plans/prod/vpc /tmp/report-plans/prod/eks
+          echo '{"resource_changes":[{"address":"aws_vpc.main","type":"aws_vpc","name":"main","change":{"actions":["create"],"before":null,"after":{"cidr_block":"10.0.0.0/16"}}}]}' \
+            > /tmp/report-plans/prod/vpc/tfplan.json
+          echo '{"resource_changes":[{"address":"aws_instance.web","type":"aws_instance","name":"web","change":{"actions":["update"],"before":{"instance_type":"t3.micro"},"after":{"instance_type":"t3.small"}}}]}' \
+            > /tmp/report-plans/prod/eks/tfplan.json
+
+      - name: Generate plan report (default output path)
+        id: report
+        uses: ./plan-report
+        with:
+          plans-dir: /tmp/report-plans
+
+      - name: Verify report-file output is set and file exists
+        run: |
+          REPORT_FILE="${{ steps.report.outputs.report-file }}"
+          [ -n "$REPORT_FILE" ] || (echo "report-file output is empty" && exit 1)
+          [ -f "$REPORT_FILE" ] || (echo "report file does not exist: $REPORT_FILE" && exit 1)
+
+      - name: Verify report is non-empty and contains expected stacks
+        run: |
+          REPORT_FILE="${{ steps.report.outputs.report-file }}"
+          [ -s "$REPORT_FILE" ] || (echo "report file is empty" && exit 1)
+          grep -q "prod/vpc" "$REPORT_FILE" || (echo "Expected prod/vpc in report" && exit 1)
+          grep -q "prod/eks" "$REPORT_FILE" || (echo "Expected prod/eks in report" && exit 1)
+
+      - name: Generate plan report with custom output path
+        id: report-custom
+        uses: ./plan-report
+        with:
+          plans-dir: /tmp/report-plans
+          output: /tmp/my-custom-report.md
+
+      - name: Verify custom output path is used
+        run: |
+          [ "${{ steps.report-custom.outputs.report-file }}" = "/tmp/my-custom-report.md" ] \
+            || (echo "Expected /tmp/my-custom-report.md, got ${{ steps.report-custom.outputs.report-file }}" && exit 1)
+          [ -f "/tmp/my-custom-report.md" ] || (echo "Custom report file not found" && exit 1)
