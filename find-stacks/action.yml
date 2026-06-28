@@ -37,7 +37,7 @@ runs:
         if [ -z "$PATHS" ]; then
           JSON="[]"
         else
-          JSON=$(printf '%s' "$PATHS" | jq -R -s 'split("\n") | map(select(length > 0))')
+          JSON=$(printf '%s' "$PATHS" | jq -Rcs 'split("\n") | map(select(length > 0))')
         fi
 
         COUNT=$(printf '%s' "$JSON" | jq 'length')
