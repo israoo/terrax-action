@@ -1,0 +1,34 @@
+name: 'TerraX Plan Report'
+description: 'Generate a markdown report from JSON plan files with per-resource attribute diffs. No binary plan or .terragrunt-cache required.'
+inputs:
+  plans-dir:
+    description: 'Directory containing JSON plan files (from terragrunt --json-out-dir).'
+    required: true
+  output:
+    description: 'Output file path. Defaults to a temp file under RUNNER_TEMP.'
+    required: false
+    default: ''
+outputs:
+  report-file:
+    description: 'Path to the generated markdown report file.'
+    value: ${{ steps.report.outputs.report-file }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Generate report
+      id: report
+      shell: bash
+      env:
+        INPUT_PLANS_DIR: ${{ inputs.plans-dir }}
+        INPUT_OUTPUT: ${{ inputs.output }}
+      run: |
+        set -euo pipefail
+
+        REPORT_FILE="${INPUT_OUTPUT:-${RUNNER_TEMP}/terrax-plan-report.md}"
+
+        terrax report \
+          --plans-dir "$INPUT_PLANS_DIR" \
+          --format markdown \
+          --output "$REPORT_FILE"
+
+        echo "report-file=${REPORT_FILE}" >> "$GITHUB_OUTPUT"

@@ -9,6 +9,7 @@ GitHub Actions for [TerraX](https://github.com/israoo/terrax) — the interactiv
 | [`setup-terrax`](#setup-terrax) | Install the TerraX binary |
 | [`find-stacks`](#find-stacks) | List stacks, optionally filtered by git diff |
 | [`summary`](#summary) | Print a plan summary to stdout |
+| [`plan-report`](#plan-report) | Generate a markdown report with per-resource attribute diffs |
 
 ---
 
@@ -20,7 +21,7 @@ Install TerraX from GitHub Releases and add it to `PATH`.
 
 | Name | Required | Default | Description |
 |------|----------|---------|-------------|
-| `version` | no | `latest` | Version to install (e.g. `v0.5.1` or `latest`). |
+| `version` | no | `latest` | Version to install (e.g. `v0.5.0` or `latest`). |
 
 ### Outputs
 
@@ -75,13 +76,14 @@ List Terragrunt stacks under a directory. With `base`, returns only stacks affec
 
 ## `summary`
 
-Print a grouped terminal summary of pending vs. no-change stacks from `.terrax/plans/` plan files written by a previous `terrax run plan` step.
+Print a grouped terminal summary of pending vs. no-change stacks from plan files written by a previous `terrax run plan` step.
 
 ### Inputs
 
 | Name | Required | Default | Description |
 |------|----------|---------|-------------|
 | `dir` | no | `.` | Working directory (same as `terrax summary --dir`). |
+| `plans-dir` | no | `""` | Directory containing JSON plan files. Overrides the default `.terrax/plans/` location. |
 
 ### Example
 
@@ -93,14 +95,48 @@ Print a grouped terminal summary of pending vs. no-change stacks from `.terrax/p
 
 ---
 
+## `plan-report`
+
+Generate a markdown report from JSON plan files with per-resource attribute diffs. Does not require a binary plan file or `.terragrunt-cache`.
+
+### Inputs
+
+| Name | Required | Default | Description |
+|------|----------|---------|-------------|
+| `plans-dir` | yes | — | Directory containing JSON plan files (from `terragrunt --json-out-dir`). |
+| `output` | no | `""` | Output file path. Defaults to a temp file under `$RUNNER_TEMP`. |
+
+### Outputs
+
+| Name | Description |
+|------|-------------|
+| `report-file` | Path to the generated markdown report file. |
+
+### Example
+
+```yaml
+- uses: israoo/terrax-action/plan-report@v1
+  id: report
+  with:
+    plans-dir: .terrax/plans
+
+- name: Upload report
+  uses: actions/upload-artifact@v4
+  with:
+    name: plan-report
+    path: ${{ steps.report.outputs.report-file }}
+```
+
+---
+
 ## Full workflow example
 
 ```yaml
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
@@ -119,6 +155,17 @@ jobs:
           done
 
       - uses: israoo/terrax-action/summary@v1
+
+      - uses: israoo/terrax-action/plan-report@v1
+        id: report
+        with:
+          plans-dir: .terrax/plans
+
+      - name: Upload plan report
+        uses: actions/upload-artifact@v4
+        with:
+          name: plan-report
+          path: ${{ steps.report.outputs.report-file }}
 ```
 
 ## License
