@@ -12,7 +12,10 @@ on:
 jobs:
   test-setup-terrax:
     name: Test setup-terrax
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
@@ -42,7 +45,10 @@ jobs:
 
   test-find-stacks:
     name: Test find-stacks
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
@@ -128,9 +134,76 @@ jobs:
             && echo '${{ steps.no-changes.outputs.stacks }}' | jq -e '. == []' \
             || (echo "Expected empty result when base=HEAD, got count=${{ steps.no-changes.outputs.count }}" && exit 1)
 
+  test-classify-stacks:
+    name: Test classify-stacks
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - uses: ./setup-terrax
+
+      - name: Create fixture repo with two stacks (default + private)
+        run: |
+          REPO=$(mktemp -d)
+          echo "" > "$REPO/root.hcl"
+          printf 'stack_groups:\n  default:\n    depends_on: []\n  private_connection:\n    detect: "require_private_connection = true"\n    depends_on: [default]\n' \
+            > "$REPO/.terrax.yaml"
+          mkdir -p "$REPO/workloads/default/vpc"
+          echo "# vpc" > "$REPO/workloads/default/vpc/terragrunt.hcl"
+          mkdir -p "$REPO/workloads/private/db"
+          echo "# db" > "$REPO/workloads/private/db/terragrunt.hcl"
+          echo "require_private_connection = true" > "$REPO/workloads/private/db/stack.hcl"
+          echo "TEST_REPO=$REPO" >> "$GITHUB_ENV"
+
+      - name: Classify all stacks (no --stacks input)
+        id: all
+        uses: ./classify-stacks
+        with:
+          dir: ${{ env.TEST_REPO }}
+
+      - name: Verify both groups are present
+        run: |
+          jq -e '.groups | map(.name) | contains(["default","private_connection"])' \
+            "${{ steps.all.outputs.groups-file }}" \
+            || (echo "Expected both groups:" && cat "${{ steps.all.outputs.groups-file }}" && exit 1)
+
+      - name: Classify only vpc stack via --stacks
+        id: vpc-only
+        uses: ./classify-stacks
+        with:
+          dir: ${{ env.TEST_REPO }}
+          stacks: '["${{ env.TEST_REPO }}/workloads/default/vpc"]'
+
+      - name: Verify only default group has vpc, private_connection is empty
+        run: |
+          FILE="${{ steps.vpc-only.outputs.groups-file }}"
+          jq -e '.groups | map(select(.name == "default")) | .[0].filters | any(endswith("workloads/default/vpc"))' \
+            "$FILE" || (echo "Expected vpc in default group:" && cat "$FILE" && exit 1)
+          jq -e '.groups | map(select(.name == "private_connection")) | .[0].filters | length == 0' \
+            "$FILE" || (echo "Expected private_connection group to be empty:" && cat "$FILE" && exit 1)
+
+      - name: Classify only db stack via --stacks
+        id: db-only
+        uses: ./classify-stacks
+        with:
+          dir: ${{ env.TEST_REPO }}
+          stacks: '["${{ env.TEST_REPO }}/workloads/private/db"]'
+
+      - name: Verify db lands in private_connection group
+        run: |
+          FILE="${{ steps.db-only.outputs.groups-file }}"
+          jq -e '.groups | map(select(.name == "private_connection")) | .[0].filters | any(endswith("workloads/private/db"))' \
+            "$FILE" || (echo "Expected db in private_connection group:" && cat "$FILE" && exit 1)
+
   test-summary:
     name: Test summary
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
@@ -181,7 +254,10 @@ jobs:
 
   test-plan-report:
     name: Test plan-report
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 

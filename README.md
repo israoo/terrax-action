@@ -8,6 +8,7 @@ GitHub Actions for [TerraX](https://github.com/israoo/terrax) — the interactiv
 |--------|-------------|
 | [`setup-terrax`](#setup-terrax) | Install the TerraX binary |
 | [`find-stacks`](#find-stacks) | List stacks, optionally filtered by git diff |
+| [`classify-stacks`](#classify-stacks) | Classify stacks into groups for parallel execution |
 | [`summary`](#summary) | Print a plan summary to stdout |
 | [`plan-report`](#plan-report) | Generate a markdown report with per-resource attribute diffs |
 
@@ -91,6 +92,38 @@ Print a grouped terminal summary of pending vs. no-change stacks from plan files
 - uses: israoo/terrax-action/summary@v1
   with:
     dir: infra/
+```
+
+---
+
+## `classify-stacks`
+
+Classify Terragrunt stacks into groups for parallel CI execution using `terrax groups`. Requires a `.terrax.yaml` with `stack_groups` configured.
+
+### Inputs
+
+| Name | Required | Default | Description |
+|------|----------|---------|-------------|
+| `dir` | no | `.` | Working directory (same as `terrax groups --dir`). |
+| `stacks` | no | `[]` | JSON array of stack paths to classify. When empty, all stacks under `dir` are classified. |
+| `output-file` | no | `$RUNNER_TEMP/terrax-groups.json` | File path to write the JSON output. |
+
+### Outputs
+
+| Name | Description |
+|------|-------------|
+| `groups-file` | Path to the JSON file containing `terrax groups` output (`{groups, repo_root}`). |
+
+### Example
+
+```yaml
+- uses: israoo/terrax-action/classify-stacks@v1
+  id: classify
+  with:
+    dir: infra/
+
+- name: Read groups
+  run: jq '.groups' "${{ steps.classify.outputs.groups-file }}"
 ```
 
 ---

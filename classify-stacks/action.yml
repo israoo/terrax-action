@@ -1,0 +1,48 @@
+name: 'TerraX Classify Stacks'
+description: 'Classify a list of stack paths into groups using terrax groups. Requires a .terrax.yaml with stack_groups configured in the repository.'
+inputs:
+  stacks:
+    description: 'JSON array of stack paths to classify (e.g. output of find-stacks). When empty, all stacks under dir are classified.'
+    required: false
+    default: '[]'
+  dir:
+    description: 'Working directory (same as terrax groups --dir). Defaults to repo root.'
+    required: false
+    default: '.'
+  output-file:
+    description: 'File path to write the groups JSON output. Defaults to a temp file under RUNNER_TEMP.'
+    required: false
+    default: ''
+outputs:
+  groups-file:
+    description: 'Path to the JSON file containing terrax groups output ({groups, repo_root}).'
+    value: ${{ steps.classify.outputs.groups-file }}
+runs:
+  using: 'composite'
+  steps:
+    - name: Classify stacks
+      id: classify
+      shell: bash
+      env:
+        INPUT_STACKS: ${{ inputs.stacks }}
+        INPUT_DIR: ${{ inputs.dir }}
+        INPUT_OUTPUT_FILE: ${{ inputs.output-file }}
+      run: |
+        set -euo pipefail
+
+        CMD=(terrax groups)
+
+        if [ -n "$INPUT_DIR" ] && [ "$INPUT_DIR" != "." ]; then
+          CMD+=(--dir "$INPUT_DIR")
+        fi
+
+        # Convert JSON array to individual --stack flags when stacks were provided.
+        if [ "$INPUT_STACKS" != "[]" ] && [ -n "$INPUT_STACKS" ]; then
+          while IFS= read -r path; do
+            [ -n "$path" ] && CMD+=(--stack "$path")
+          done < <(echo "$INPUT_STACKS" | jq -r '.[]')
+        fi
+
+        OUTPUT_FILE="${INPUT_OUTPUT_FILE:-${RUNNER_TEMP}/terrax-groups.json}"
+        "${CMD[@]}" > "$OUTPUT_FILE"
+        echo "groups-file=${OUTPUT_FILE}" >> "$GITHUB_OUTPUT"
