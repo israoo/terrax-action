@@ -23,25 +23,31 @@ jobs:
         id: setup
         uses: ./setup-terrax
 
-      - name: Verify binary is in PATH
-        run: terrax --version
-
-      - name: Verify version output format
+      - name: Verify binary is in PATH and runs
         run: |
-          echo "Installed: ${{ steps.setup.outputs.terrax-version }}"
-          [[ "${{ steps.setup.outputs.terrax-version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
-            || (echo "terrax-version output has unexpected format" && exit 1)
+          which terrax
+          terrax --version
 
-      - name: Install TerraX (pinned)
+      - name: Verify terrax-version output format
+        run: |
+          VERSION="${{ steps.setup.outputs.terrax-version }}"
+          echo "terrax-version output: $VERSION"
+          [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+            || (echo "FAIL: unexpected format — got '$VERSION'" && exit 1)
+          echo "OK: format matches ^v[0-9]+\.[0-9]+\.[0-9]+$"
+
+      - name: Install TerraX (pinned v0.5.0)
         id: pinned
         uses: ./setup-terrax
         with:
           version: v0.5.0
 
-      - name: Verify pinned version
+      - name: Verify pinned version matches request
         run: |
-          [ "${{ steps.pinned.outputs.terrax-version }}" = "v0.5.0" ] \
-            || (echo "Expected v0.5.0 got ${{ steps.pinned.outputs.terrax-version }}" && exit 1)
+          GOT="${{ steps.pinned.outputs.terrax-version }}"
+          echo "Requested: v0.5.0 — got: $GOT"
+          [ "$GOT" = "v0.5.0" ] || (echo "FAIL: expected v0.5.0, got $GOT" && exit 1)
+          echo "OK"
 
   test-find-stacks:
     name: Test find-stacks
@@ -60,24 +66,20 @@ jobs:
         with:
           dir: tests/fixtures
 
-      - name: Verify count is 3
+      - name: Verify count=3 and all expected paths are present
         run: |
           COUNT="${{ steps.all.outputs.count }}"
-          [ "$COUNT" = "3" ] || (echo "Expected 3 stacks, got $COUNT. stacks=${{ steps.all.outputs.stacks }}" && exit 1)
-
-      - name: Verify stacks is a JSON array
-        run: |
-          echo '${{ steps.all.outputs.stacks }}' | jq 'if type == "array" then . else error("not an array") end'
-
-      - name: Verify expected stack paths are present
-        run: |
           STACKS='${{ steps.all.outputs.stacks }}'
+          echo "count:  $COUNT"
+          echo "stacks: $STACKS"
+          [ "$COUNT" = "3" ] || (echo "FAIL: expected count=3, got $COUNT" && exit 1)
           for SUFFIX in "tests/fixtures/prod/vpc" "tests/fixtures/prod/eks" "tests/fixtures/staging/vpc"; do
             echo "$STACKS" | jq -e --arg s "$SUFFIX" '[.[] | endswith($s)] | any' \
-              || (echo "Missing expected stack suffix: $SUFFIX" && exit 1)
+              || (echo "FAIL: missing expected suffix $SUFFIX" && exit 1)
+            echo "OK: found $SUFFIX"
           done
 
-      - name: find-stacks with no stacks dir returns empty array
+      - name: Find stacks in empty dir returns empty array
         id: empty
         uses: ./find-stacks
         with:
@@ -85,9 +87,14 @@ jobs:
 
       - name: Verify empty result
         run: |
-          [ "${{ steps.empty.outputs.count }}" = "0" ] \
-            && echo '${{ steps.empty.outputs.stacks }}' | jq -e '. == []' \
-            || (echo "Expected empty result" && exit 1)
+          COUNT="${{ steps.empty.outputs.count }}"
+          STACKS='${{ steps.empty.outputs.stacks }}'
+          echo "count:  $COUNT"
+          echo "stacks: $STACKS"
+          [ "$COUNT" = "0" ] || (echo "FAIL: expected count=0, got $COUNT" && exit 1)
+          echo '${{ steps.empty.outputs.stacks }}' | jq -e '. == []' \
+            || (echo "FAIL: stacks is not empty array" && exit 1)
+          echo "OK"
 
       - name: Set up synthetic git repo for --base tests
         run: |
@@ -100,13 +107,16 @@ jobs:
           echo "# vpc" > "$REPO/stacks/vpc/terragrunt.hcl"
           echo "# eks" > "$REPO/stacks/eks/terragrunt.hcl"
           git -C "$REPO" add -A && git -C "$REPO" commit -m "init"
-          echo "BASE_COMMIT=$(git -C "$REPO" rev-parse HEAD)" >> "$GITHUB_ENV"
+          BASE=$(git -C "$REPO" rev-parse HEAD)
+          echo "BASE_COMMIT=$BASE" >> "$GITHUB_ENV"
           echo "# changed" >> "$REPO/stacks/vpc/terragrunt.hcl"
           git -C "$REPO" add -A && git -C "$REPO" commit -m "change vpc"
-          echo "HEAD_COMMIT=$(git -C "$REPO" rev-parse HEAD)" >> "$GITHUB_ENV"
+          HEAD=$(git -C "$REPO" rev-parse HEAD)
+          echo "HEAD_COMMIT=$HEAD" >> "$GITHUB_ENV"
           echo "TEST_REPO=$REPO" >> "$GITHUB_ENV"
+          echo "Repo: $REPO  base: $BASE  head: $HEAD"
 
-      - name: find-stacks with --base returns only affected stacks
+      - name: find-stacks --base returns only affected stack
         id: affected
         uses: ./find-stacks
         with:
@@ -117,11 +127,14 @@ jobs:
         run: |
           COUNT="${{ steps.affected.outputs.count }}"
           STACKS='${{ steps.affected.outputs.stacks }}'
-          [ "$COUNT" = "1" ] || (echo "Expected 1 affected stack, got $COUNT. stacks=$STACKS" && exit 1)
+          echo "count:  $COUNT"
+          echo "stacks: $STACKS"
+          [ "$COUNT" = "1" ] || (echo "FAIL: expected count=1, got $COUNT" && exit 1)
           echo "$STACKS" | jq -e '[.[] | endswith("stacks/vpc")] | any' \
-            || (echo "Expected stacks/vpc in output, got $STACKS" && exit 1)
+            || (echo "FAIL: stacks/vpc not in output" && exit 1)
+          echo "OK: only vpc returned as affected"
 
-      - name: find-stacks with --base and no changes returns empty array
+      - name: find-stacks --base=HEAD returns empty (no changes)
         id: no-changes
         uses: ./find-stacks
         with:
@@ -130,9 +143,13 @@ jobs:
 
       - name: Verify empty result when base equals HEAD
         run: |
-          [ "${{ steps.no-changes.outputs.count }}" = "0" ] \
-            && echo '${{ steps.no-changes.outputs.stacks }}' | jq -e '. == []' \
-            || (echo "Expected empty result when base=HEAD, got count=${{ steps.no-changes.outputs.count }}" && exit 1)
+          COUNT="${{ steps.no-changes.outputs.count }}"
+          STACKS='${{ steps.no-changes.outputs.stacks }}'
+          echo "count:  $COUNT"
+          echo "stacks: $STACKS"
+          [ "$COUNT" = "0" ] || (echo "FAIL: expected count=0 when base=HEAD, got $COUNT" && exit 1)
+          echo "$STACKS" | jq -e '. == []' || (echo "FAIL: stacks is not empty array" && exit 1)
+          echo "OK"
 
   test-classify-stacks:
     name: Test classify-stacks
@@ -145,7 +162,7 @@ jobs:
 
       - uses: ./setup-terrax
 
-      - name: Create fixture repo with two stacks (default + private)
+      - name: Create fixture repo with two stacks (default + private_connection)
         run: |
           REPO=$(mktemp -d)
           echo "" > "$REPO/root.hcl"
@@ -157,6 +174,9 @@ jobs:
           echo "# db" > "$REPO/workloads/private/db/terragrunt.hcl"
           echo "require_private_connection = true" > "$REPO/workloads/private/db/stack.hcl"
           echo "TEST_REPO=$REPO" >> "$GITHUB_ENV"
+          echo "Fixture: $REPO"
+          echo "  workloads/default/vpc  → default group"
+          echo "  workloads/private/db   → private_connection group"
 
       - name: Classify all stacks (no --stacks input)
         id: all
@@ -166,9 +186,14 @@ jobs:
 
       - name: Verify both groups are present
         run: |
-          jq -e '.groups | map(.name) | contains(["default","private_connection"])' \
-            "${{ steps.all.outputs.groups-file }}" \
-            || (echo "Expected both groups:" && cat "${{ steps.all.outputs.groups-file }}" && exit 1)
+          FILE="${{ steps.all.outputs.groups-file }}"
+          echo "groups-file: $FILE"
+          echo "--- content ---"
+          cat "$FILE"
+          echo "--- end ---"
+          jq -e '.groups | map(.name) | contains(["default","private_connection"])' "$FILE" \
+            || (echo "FAIL: expected both groups default and private_connection" && exit 1)
+          echo "OK: both groups present"
 
       - name: Classify only vpc stack via --stacks
         id: vpc-only
@@ -177,13 +202,19 @@ jobs:
           dir: ${{ env.TEST_REPO }}
           stacks: '["${{ env.TEST_REPO }}/workloads/default/vpc"]'
 
-      - name: Verify only default group has vpc, private_connection is empty
+      - name: Verify vpc lands in default group only
         run: |
           FILE="${{ steps.vpc-only.outputs.groups-file }}"
+          echo "groups-file: $FILE"
+          echo "--- content ---"
+          cat "$FILE"
+          echo "--- end ---"
           jq -e '.groups | map(select(.name == "default")) | .[0].filters | any(endswith("workloads/default/vpc"))' \
-            "$FILE" || (echo "Expected vpc in default group:" && cat "$FILE" && exit 1)
+            "$FILE" || (echo "FAIL: vpc not found in default group" && exit 1)
+          echo "OK: vpc in default group"
           jq -e '.groups | map(select(.name == "private_connection")) | .[0].filters | length == 0' \
-            "$FILE" || (echo "Expected private_connection group to be empty:" && cat "$FILE" && exit 1)
+            "$FILE" || (echo "FAIL: private_connection should be empty" && exit 1)
+          echo "OK: private_connection group is empty"
 
       - name: Classify only db stack via --stacks
         id: db-only
@@ -195,8 +226,13 @@ jobs:
       - name: Verify db lands in private_connection group
         run: |
           FILE="${{ steps.db-only.outputs.groups-file }}"
+          echo "groups-file: $FILE"
+          echo "--- content ---"
+          cat "$FILE"
+          echo "--- end ---"
           jq -e '.groups | map(select(.name == "private_connection")) | .[0].filters | any(endswith("workloads/private/db"))' \
-            "$FILE" || (echo "Expected db in private_connection group:" && cat "$FILE" && exit 1)
+            "$FILE" || (echo "FAIL: db not found in private_connection group" && exit 1)
+          echo "OK: db in private_connection group"
 
   test-summary:
     name: Test summary
@@ -209,48 +245,55 @@ jobs:
 
       - uses: ./setup-terrax
 
-      - name: Create minimal repo root marker
+      - name: Create repo root marker and empty plans dir
         run: |
           echo "# root" > root.hcl
           mkdir -p .terrax/plans
+          echo "Created root.hcl and empty .terrax/plans/"
 
-      - name: Run summary with empty plans dir (default plans-dir)
+      - name: Run summary with empty plans dir (expect exit 0)
         uses: ./summary
         # terrax summary exits 0 with a "no plans" message when .terrax/plans/ is empty.
 
       - name: Create fixture plan files
         run: |
           mkdir -p /tmp/fixture-plans/prod/vpc /tmp/fixture-plans/prod/eks
-          # prod/vpc has pending changes (create).
           echo '{"resource_changes":[{"address":"aws_vpc.main","type":"aws_vpc","name":"main","change":{"actions":["create"],"before":null,"after":{"cidr_block":"10.0.0.0/16"}}}]}' \
             > /tmp/fixture-plans/prod/vpc/tfplan.json
-          # prod/eks has no changes (no-op).
           echo '{"resource_changes":[{"address":"aws_instance.web","type":"aws_instance","name":"web","change":{"actions":["no-op"],"before":{},"after":{}}}]}' \
             > /tmp/fixture-plans/prod/eks/tfplan.json
+          echo "Created fixture plans:"
+          echo "  prod/vpc — create (has changes)"
+          echo "  prod/eks — no-op (no changes)"
 
-      - name: Run summary with plan files via plans-dir
+      - name: Run summary with plans-dir
         uses: ./summary
         with:
           plans-dir: /tmp/fixture-plans
 
       - name: Verify summary output contains both stacks
         run: |
+          echo "Running terrax summary --plans-dir /tmp/fixture-plans"
           OUTPUT=$(terrax summary --plans-dir /tmp/fixture-plans 2>&1)
+          echo "--- output ---"
           echo "$OUTPUT"
-          echo "$OUTPUT" | grep -q "prod/vpc" || (echo "Expected prod/vpc in summary output" && exit 1)
-          echo "$OUTPUT" | grep -q "prod/eks" || (echo "Expected prod/eks in summary output" && exit 1)
+          echo "--- end ---"
+          echo "$OUTPUT" | grep -q "prod/vpc" || (echo "FAIL: prod/vpc missing from summary" && exit 1)
+          echo "OK: prod/vpc present"
+          echo "$OUTPUT" | grep -q "prod/eks" || (echo "FAIL: prod/eks missing from summary" && exit 1)
+          echo "OK: prod/eks present"
 
-      - name: Run summary with explicit --dir
+      - name: Create custom dir for --dir test
         run: |
           mkdir -p /tmp/summary-dir
           echo "# root" > /tmp/summary-dir/root.hcl
           mkdir -p /tmp/summary-dir/.terrax/plans
+          echo "Created /tmp/summary-dir with empty plans"
 
-      - name: Run summary action with explicit dir
+      - name: Run summary with explicit dir (expect exit 0 with empty plans)
         uses: ./summary
         with:
           dir: /tmp/summary-dir
-        # Verifies --dir is passed correctly; exits 0 with empty plans.
 
   test-plan-report:
     name: Test plan-report
@@ -270,6 +313,9 @@ jobs:
             > /tmp/report-plans/prod/vpc/tfplan.json
           echo '{"resource_changes":[{"address":"aws_instance.web","type":"aws_instance","name":"web","change":{"actions":["update"],"before":{"instance_type":"t3.micro"},"after":{"instance_type":"t3.small"}}}]}' \
             > /tmp/report-plans/prod/eks/tfplan.json
+          echo "Created fixture plans:"
+          echo "  prod/vpc — create aws_vpc.main"
+          echo "  prod/eks — update aws_instance.web (t3.micro → t3.small)"
 
       - name: Generate plan report (default output path)
         id: report
@@ -277,23 +323,25 @@ jobs:
         with:
           plans-dir: /tmp/report-plans
 
-      - name: Verify has-changes is true
+      - name: Verify has-changes=true and report file is valid
         run: |
-          [ "${{ steps.report.outputs.has-changes }}" = "true" ] \
-            || (echo "Expected has-changes=true, got ${{ steps.report.outputs.has-changes }}" && exit 1)
-
-      - name: Verify report-file output is set and file exists
-        run: |
-          REPORT_FILE="${{ steps.report.outputs.report-file }}"
-          [ -n "$REPORT_FILE" ] || (echo "report-file output is empty" && exit 1)
-          [ -f "$REPORT_FILE" ] || (echo "report file does not exist: $REPORT_FILE" && exit 1)
-
-      - name: Verify report is non-empty and contains expected stacks
-        run: |
-          REPORT_FILE="${{ steps.report.outputs.report-file }}"
-          [ -s "$REPORT_FILE" ] || (echo "report file is empty" && exit 1)
-          grep -q "prod/vpc" "$REPORT_FILE" || (echo "Expected prod/vpc in report" && exit 1)
-          grep -q "prod/eks" "$REPORT_FILE" || (echo "Expected prod/eks in report" && exit 1)
+          HAS="${{ steps.report.outputs.has-changes }}"
+          FILE="${{ steps.report.outputs.report-file }}"
+          echo "has-changes:  $HAS"
+          echo "report-file:  $FILE"
+          [ "$HAS" = "true" ] || (echo "FAIL: expected has-changes=true, got $HAS" && exit 1)
+          echo "OK: has-changes=true"
+          [ -n "$FILE" ] || (echo "FAIL: report-file output is empty" && exit 1)
+          [ -f "$FILE" ] || (echo "FAIL: file does not exist: $FILE" && exit 1)
+          [ -s "$FILE" ] || (echo "FAIL: file is empty: $FILE" && exit 1)
+          echo "OK: file exists and is non-empty"
+          grep -q "prod/vpc" "$FILE" || (echo "FAIL: prod/vpc missing from report" && exit 1)
+          echo "OK: prod/vpc present"
+          grep -q "prod/eks" "$FILE" || (echo "FAIL: prod/eks missing from report" && exit 1)
+          echo "OK: prod/eks present"
+          echo "--- report preview (first 20 lines) ---"
+          head -20 "$FILE"
+          echo "---"
 
       - name: Generate plan report with custom output path
         id: report-custom
@@ -304,9 +352,12 @@ jobs:
 
       - name: Verify custom output path is used
         run: |
-          [ "${{ steps.report-custom.outputs.report-file }}" = "/tmp/my-custom-report.md" ] \
-            || (echo "Expected /tmp/my-custom-report.md, got ${{ steps.report-custom.outputs.report-file }}" && exit 1)
-          [ -f "/tmp/my-custom-report.md" ] || (echo "Custom report file not found" && exit 1)
+          GOT="${{ steps.report-custom.outputs.report-file }}"
+          echo "report-file: $GOT"
+          [ "$GOT" = "/tmp/my-custom-report.md" ] \
+            || (echo "FAIL: expected /tmp/my-custom-report.md, got $GOT" && exit 1)
+          [ -f "/tmp/my-custom-report.md" ] || (echo "FAIL: custom file not found" && exit 1)
+          echo "OK"
 
       - name: Generate plan report with empty plans dir
         id: report-empty
@@ -314,9 +365,13 @@ jobs:
         with:
           plans-dir: /tmp/empty-plans
 
-      - name: Verify has-changes is false and report-file is empty when no plans
+      - name: Verify has-changes=false and no report file when plans dir is empty
         run: |
-          [ "${{ steps.report-empty.outputs.has-changes }}" = "false" ] \
-            || (echo "Expected has-changes=false, got ${{ steps.report-empty.outputs.has-changes }}" && exit 1)
-          [ -z "${{ steps.report-empty.outputs.report-file }}" ] \
-            || (echo "Expected report-file to be empty, got ${{ steps.report-empty.outputs.report-file }}" && exit 1)
+          HAS="${{ steps.report-empty.outputs.has-changes }}"
+          FILE="${{ steps.report-empty.outputs.report-file }}"
+          echo "has-changes: $HAS"
+          echo "report-file: '$FILE'"
+          [ "$HAS" = "false" ] || (echo "FAIL: expected has-changes=false, got $HAS" && exit 1)
+          echo "OK: has-changes=false"
+          [ -z "$FILE" ] || (echo "FAIL: expected report-file to be empty, got $FILE" && exit 1)
+          echo "OK: report-file is empty"
